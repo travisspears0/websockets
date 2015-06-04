@@ -4,4 +4,6 @@
 
 	use WebSockets\Server\Server;
 
-	$server = Server::run();
+	set_time_limit(0);
+
+	(new Server())->run();
