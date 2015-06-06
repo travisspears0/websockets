@@ -9,11 +9,11 @@ class Server {
 	private $host,
 			$port;
 
-	public function __construct($host="127.0.0.1",$port="8080") {
+	public function __construct($host="127.0.0.1",$port="1234") {
 		$this->host = $host;
 		$this->port = $port;
 
-		/* */
+		/* *
 		set_error_handler(function($errno, $errstr) { 
 			throw new \Exception("ERROR => [$errno] $errstr");
 		});
@@ -78,7 +78,12 @@ class Server {
 		    	//received new message
 		    	if( isset($connections[$i]) && in_array($connections[$i]->getSocket(), $read) ) {
 		    		$newConn = false;
-		    		$message = socket_read($connections[$i]->getSocket(), 2*1024);
+		    		$message="";
+    				while( socket_recv($connections[$i]->getSocket(), $out, 2*1024,MSG_DONTWAIT) > 0 ) {
+    					if( $out != null ) {
+    						$message .= $out; 
+    					}
+    				}
 		    		//empty message = disconnect
 		    		/*if( strlen($message) === 0 && false ) {
 						Server::write("USER [" . $connections[$i]->getSocket() . "] disconnected!");
@@ -100,12 +105,14 @@ class Server {
 			    		}
 			    		break;
 		    		}
+	    			$message = $this->unmask($message);
 					Server::write("User [" . $connections[$i]->getSocket() . "]: $message" );
 					//send user message to all other users
 					for( $j=0 ; $j<Server::MAX_CONNECTIONS ; ++$j ) {
 						if( isset($connections[$j]) ){//&& $j !== $i ) {
 							try {
 								$buff = "USER [". $connections[$j]->getSocket() ."]: $message";
+								$buff = $this->mask($buff);
 								socket_write($connections[$j]->getSocket(), $buff, strlen($buff));
 							} catch(\Exception $e) {
 				    			Server::write("ERROR ". $connections[$i]->getSocket() ." disconnected!");
@@ -142,6 +149,41 @@ class Server {
 		}
 	}
 
+	private function unmask($text) {
+		$length = ord($text[1]) & 127;
+		if($length == 126) {
+			$masks = substr($text, 4, 4);
+			$data = substr($text, 8);
+		}
+		elseif($length == 127) {
+			$masks = substr($text, 10, 4);
+			$data = substr($text, 14);
+		}
+		else {
+			$masks = substr($text, 2, 4);
+			$data = substr($text, 6);
+		}
+		$text = "";
+		for ($i = 0; $i < strlen($data); ++$i) {
+			$text .= $data[$i] ^ $masks[$i%4];
+		}
+		return $text;
+	}
+
+	private function mask($text)
+	{
+		$b1 = 0x80 | (0x1 & 0x0f);
+		$length = strlen($text);
+		
+		if($length <= 125)
+			$header = pack('CC', $b1, $length);
+		elseif($length > 125 && $length < 65536)
+			$header = pack('CCn', $b1, 126, $length);
+		elseif($length >= 65536)
+			$header = pack('CCNN', $b1, 127, $length);
+		return $header.$text;
+	}
+
 	private function handshake($client, $headers, $socket) {
 
 		if(preg_match("/Sec-WebSocket-Version: (.*)\r\n/", $headers, $match))
@@ -153,7 +195,7 @@ class Server {
 
 		if($version == 13) {
 			// Extract header variables
-	if(preg_match("/GET (.*) HTTP/", $headers, $match))
+			if(preg_match("/GET (.*) HTTP/", $headers, $match))
 				$root = $match[1];
 			if(preg_match("/Host: (.*)\r\n/", $headers, $match))
 				$host = $match[1];

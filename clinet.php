@@ -5,7 +5,7 @@
 <script>
 $(document).ready(function(){
 
-	var conn = new WebSocket('ws://localhost:8080');
+	var conn = new WebSocket('ws://127.0.0.1:1234');
 
 	conn.onopen = function(e) {
 		console.log(e);
@@ -23,6 +23,7 @@ $(document).ready(function(){
 		var msg = $("#msg").val();
 		if( msg.length ) {
 			conn.send( msg );
+			console.log( "Sending: " + msg );
 		}
 	});
 
