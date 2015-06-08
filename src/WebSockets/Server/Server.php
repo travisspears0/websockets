@@ -115,9 +115,9 @@ class Server {
     					}
     				}
     				//try handshake
-		    		if( !($connections[$i]->isHandShaked()) ) {
-		    			if( $this->handshake($connections[$i]->getSocket(),$message,$socket) ) {
-			    			$connections[$i]->handShake();
+		    		if( !($connections[$i]->isHandshaked()) ) {
+		    			//if( $this->handshake($connections[$i]->getSocket(),$message) ) {
+		    			if( $connections[$i]->handshake($message) ) {
 			    			Server::write("User [". $connections[$i]->getSocket() ."] HANDSHAKED!");
 			    		} else {
 			    			Server::write("User [". $connections[$i]->getSocket() ."] couldn't perform Handshake! Disconnecting...");
@@ -125,8 +125,9 @@ class Server {
 			    		}
 			    		break;
 		    		}
+		    		$message = $this->unmask($message);
 		    		//empty message = disconnect
-		    		if( strlen($this->unmask($message)) === 0 ) {
+		    		if( strlen($message) === 0 ) {
 		    			$response = "USER [" . $connections[$i]->getSocket() . "] disconnected!";
 						Server::write($response);
 						//$this->sendMessage(	$connections[$i]->getSocket(),"disconnecting...");
@@ -137,8 +138,7 @@ class Server {
 		    		//display user's message on server console
 					$this->writeFromUser($message,$connections[$i]->getSocket());
 					//send user message to all other users
-					//last argument to true/false according to if it comes back to author or not
-					$this->sendMessageToAll($connections,$message,$i,true);
+					$this->sendMessageToAll($connections,$message,$i);
 					break;
 		    	}
 		    }
@@ -240,55 +240,7 @@ class Server {
 		unset($connections[$index]);
 		unset($read[$index+1]);
 	}
-
-	/*
-	 * description: performs handshake between user and server. Basically receives message from user and decides whether it passes requirements to establish connection properly
-	 * @params:
-	 *		$client: (socket resource)socket asking for handshake
-	 *		$headers: (string)text sent by user
-	 *		$socket: (socket resource)master socket
-	 * @return: bool:
- 	 *				true: handshake success
- 	 *				false: handshake failure
-	 */
-	private function handshake($client, $headers, $socket) {
-
-		if(preg_match("/Sec-WebSocket-Version: (.*)\r\n/", $headers, $match))
-			$version = $match[1];
-		else {
-			Server::write("The client doesn't support WebSocket");
-			return false;
-		}
-
-		if($version == 13) {
-			// Extract header variables
-			if(preg_match("/GET (.*) HTTP/", $headers, $match))
-				$root = $match[1];
-			if(preg_match("/Host: (.*)\r\n/", $headers, $match))
-				$host = $match[1];
-			if(preg_match("/Origin: (.*)\r\n/", $headers, $match))
-				$origin = $match[1];
-			if(preg_match("/Sec-WebSocket-Key: (.*)\r\n/", $headers, $match))
-				$key = $match[1];
-
-			$acceptKey = $key.'258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
-			$acceptKey = base64_encode(sha1($acceptKey, true));
-
-			$upgrade = "HTTP/1.1 101 Switching Protocols\r\n".
-					   "Upgrade: websocket\r\n".
-					   "Connection: Upgrade\r\n".
-					   "Sec-WebSocket-Accept: $acceptKey".
-					   "\r\n\r\n";
-
-			socket_write($client, $upgrade, strlen($upgrade));
-			return true;
-		}
-		else {
-			Server::write("WebSocket version 13 required (the client supports version {$version})");
-			return false;
-		}
-	}
-
+	
 	/*
 	 * description: writes down a message in server's console
 	 * @params:
@@ -308,7 +260,6 @@ class Server {
 	 * @return: -
 	 */
 	private function writeFromUser($message,$author) {
-		$message = $this->unmask($message);
 		echo "[". date('Y-m-d H:i:s') ."][$author]: $message\n" ;
 	}
 
@@ -317,15 +268,12 @@ class Server {
 	 * @params:
 	 *		$socket: (socket resource)user for which the message is
 	 *		$message: (string)message to be sent
+	 *		$date: (date)current date. Variable added to avoid sending different dates to multiple users
 	 *		$author: (string)name of the author of the message[DEFAULT='SERVER']
-	 *		$unmask: (boolean)set to true only if it comes directly from another user[DEFAULT=false]
 	 * @return: -
 	 */
-	private function sendMessage($socket,$message,$author='SERVER',$unmask=false) {
-		if( $unmask ) {
-			$message = $this->unmask($message);
-		}
-		$message = array(	"date"=>date("Y-m-d H:i:s"),
+	private function sendMessage($socket,$message,$date,$author='SERVER') {
+		$message = array(	"date"=>$date,
 							"author"=>$author,
 							"message"=>$message);
 		$message = json_encode($message);
@@ -338,22 +286,23 @@ class Server {
 	 * @params:
 	 *		$connections: (array)array of current connections on server
 	 *		$message: (string)message to be sent
-	 *		$index: (integer)index of author in $connections array. Equals to 0 if they're not registered as connection[DEFAULT=0]
-	 *		$themselves: (boolean)determines if message is supposed to be sent to the author as well[DEFAULT=false]
+	 *		$index: (integer)index of author in $connections array. Equals to -1 if they're not registered as connection[DEFAULT=-1]
 	 * @return: -
 	 */
-	private function sendMessageToAll($connections, $message, $index=0, $themselves=false) {
+	private function sendMessageToAll($connections, $message, $index=-1) {
+		$date = date("Y-m-d H:i:s");
 		for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
-			if( isset($connections[$i]) && ($i !== $index || $themselves) ) {
-				if( $index === 0 ) {
+			if( isset($connections[$i]) ) {// && ($i !== $index || $themselves) ) {
+				if( $index === -1 ) {
 					$this->sendMessage(	$connections[$i]->getSocket(),
-										$message);
+										$message,
+										$date);
 					continue;
 				}
 				$this->sendMessage(	$connections[$i]->getSocket(),
 									$message,
-									$connections[$index]->getName(),
-									true);
+									$date,
+									$connections[$index]->getName());
 			}
 		}
 	}
