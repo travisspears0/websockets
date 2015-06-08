@@ -4,11 +4,31 @@ namespace WebSockets\Server;
 
 class Server {
 
+	/*
+	 * @description: 
+ 	 * @type: constant integer
+	 */
 	const MAX_CONNECTIONS = 2;
 
-	private $host,
-			$port;
+	/*
+	 * @description: server's ip
+ 	 * @type: string
+	 */
+	private $host;
 
+	/*
+	 * @description: port on which server will listen to connections
+ 	 * @type: string
+	 */
+	private $port;
+
+	/*
+	 * description: Server constructor, initializes crucial variables
+	 * @params:
+	 *		$host
+	 *		$port
+	 * @return: -
+	 */
 	public function __construct($host="127.0.0.1",$port="1234") {
 		$this->host = $host;
 		$this->port = $port;
@@ -20,6 +40,11 @@ class Server {
 		/* */
 	}
 
+	/*
+	 * description: main function of the Server. Sets the infinite loop used to listen to connections.
+	 * @params: -
+	 * @return: -
+	 */
 	public function run() {
 		Server::write("Server is running...");
 
@@ -58,14 +83,17 @@ class Server {
 		$connections = array();
 
 		while(true) {
-
+			//reset $read array
 			$read = array();
+			//add master socket to $read
 			$read[0] = $socket;
+			//add all the connections to $read
 			for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
 				if( isset($connections[$i]) ) {
 					$read[$i+1] = $connections[$i]->getSocket();
 				}
 			}
+			//blocking function listening to changes on sockets and writing changes to $read array
 			if(socket_select($read , $write , $except , null) === false)
 		    {
 		        $errorcode = socket_last_error();
@@ -74,54 +102,43 @@ class Server {
 		        throw new \Exception("Could not listen on socket : [$errorcode] $errormsg!");
 		    }
 		    $newConn = true;
+		    //loop through connections
 		    for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
 		    	//received new message
 		    	if( isset($connections[$i]) && in_array($connections[$i]->getSocket(), $read) ) {
 		    		$newConn = false;
 		    		$message="";
+		    		//read whole message
     				while( socket_recv($connections[$i]->getSocket(), $out, 2*1024,MSG_DONTWAIT) > 0 ) {
     					if( $out != null ) {
     						$message .= $out; 
     					}
     				}
-		    		//empty message = disconnect
-		    		/*if( strlen($message) === 0 && false ) {
-						Server::write("USER [" . $connections[$i]->getSocket() . "] disconnected!");
-		    			socket_close($connections[$i]->getSocket());
-		    			unset($connections[$i]);
-		    			unset($read[$i+1]);
-		    			break;
-		    		}*/
+    				//try handshake
 		    		if( !($connections[$i]->isHandShaked()) ) {
 		    			if( $this->handshake($connections[$i]->getSocket(),$message,$socket) ) {
 			    			$connections[$i]->handShake();
-			    			//socket_write($connections[$i]->getSocket(),"Connection accepted!");
 			    			Server::write("User [". $connections[$i]->getSocket() ."] HANDSHAKED!");
 			    		} else {
 			    			Server::write("User [". $connections[$i]->getSocket() ."] couldn't perform Handshake! Disconnecting...");
-			    			socket_close($connections[$i]->getSocket());
-			    			unset($connections[$i]);
-			    			unset($read[$i+1]);
+		    				$this->disconnect($i,$connections,$read);
 			    		}
 			    		break;
 		    		}
-	    			$message = $this->unmask($message);
-					Server::write("User [" . $connections[$i]->getSocket() . "]: $message" );
+		    		//empty message = disconnect
+		    		if( strlen($this->unmask($message)) === 0 ) {
+		    			$response = "USER [" . $connections[$i]->getSocket() . "] disconnected!";
+						Server::write($response);
+						//$this->sendMessage(	$connections[$i]->getSocket(),"disconnecting...");
+						$this->sendMessageToAll($connections,$response);
+		    			$this->disconnect($i,$connections,$read);
+		    			break;
+		    		}
+		    		//display user's message on server console
+					$this->writeFromUser($message,$connections[$i]->getSocket());
 					//send user message to all other users
-					for( $j=0 ; $j<Server::MAX_CONNECTIONS ; ++$j ) {
-						if( isset($connections[$j]) ){//&& $j !== $i ) {
-							try {
-								$buff = "USER [". $connections[$j]->getSocket() ."]: $message";
-								$buff = $this->mask($buff);
-								socket_write($connections[$j]->getSocket(), $buff, strlen($buff));
-							} catch(\Exception $e) {
-				    			Server::write("ERROR ". $connections[$i]->getSocket() ." disconnected!");
-				    			socket_close($connections[$i]->getSocket());
-				    			unset($connections[$i]);
-				    			unset($read[$i+1]);
-							}
-						}
-					}
+					//last argument to true/false according to if it comes back to author or not
+					$this->sendMessageToAll($connections,$message,$i,true);
 					break;
 		    	}
 		    }
@@ -132,8 +149,9 @@ class Server {
 		    	//reserving first empty slot in connections array
 		    	for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
 		    		if( !isset($connections[$i]) ) {
-		    			$connections[$i] = new Connection($connection);//$connection;
-						Server::write("USER [" . $connections[$i]->getSocket() . "] connected");
+		    			$connections[$i] = new Connection($connection);
+		    			$response = "USER [" . $connections[$i]->getSocket() . "] connected";
+						Server::write($response);
 		    			$newConn = true;
 		    			break;
 		    		}
@@ -142,13 +160,24 @@ class Server {
 		    	if( !$newConn ) {
 					Server::write("New connection has not been accepted due to connections limit which has been reached!");
 					$buff = "Server is full!";
-					socket_write($connection, $buff,strlen($buff));
-					socket_close($connection);
+//NOT WORKING!!
+					//$this->sendMessage($connection,$buff);
+					//socket_write($connection, $buff,strlen($buff));
+					$this->disconnect($connection);
+		    	} else {
+//NOT WORKING!!
+		    		//$this->sendMessageToAll($connections,"new user connected");
 		    	}
 		    }
 		}
 	}
 
+	/*
+	 * description: translates messages sent by users for the server(TCP protocol)
+	 * @params:
+	 *		$text: (string) text to be translated
+	 * @return: $text: (string) translated text
+	 */
 	private function unmask($text) {
 		$length = ord($text[1]) & 127;
 		if($length == 126) {
@@ -170,6 +199,12 @@ class Server {
 		return $text;
 	}
 
+	/*
+	 * description: translates messages to be sent to users from the server(TCP protocol)
+	 * @params:
+	 *		$text: (string) text to be translated
+	 * @return: $text: (string) translated text
+	 */
 	private function mask($text)
 	{
 		$b1 = 0x80 | (0x1 & 0x0f);
@@ -184,6 +219,38 @@ class Server {
 		return $header.$text;
 	}
 
+	/*
+	 * description: disconnects socket and removes it from server
+	 * @params:
+	 *		$index: (integer)index of socket (in $connections array) to be removed 
+	 *		&$connections: (array reference)array with server connections
+	 *		&$read: (array reference)array with changes(from socket_select())
+	 *
+	 *		$socket: (socket resource)single socket not yet registered in server to be disconnected
+	 * @return: -
+	 */
+	private function disconnect($index,&$connections=null,&$read=null) {
+
+		if(func_num_args() === 1) {
+			socket_close($index);
+			return;
+		}
+
+		socket_close($connections[$index]->getSocket());
+		unset($connections[$index]);
+		unset($read[$index+1]);
+	}
+
+	/*
+	 * description: performs handshake between user and server. Basically receives message from user and decides whether it passes requirements to establish connection properly
+	 * @params:
+	 *		$client: (socket resource)socket asking for handshake
+	 *		$headers: (string)text sent by user
+	 *		$socket: (socket resource)master socket
+	 * @return: bool:
+ 	 *				true: handshake success
+ 	 *				false: handshake failure
+	 */
 	private function handshake($client, $headers, $socket) {
 
 		if(preg_match("/Sec-WebSocket-Version: (.*)\r\n/", $headers, $match))
@@ -222,12 +289,72 @@ class Server {
 		}
 	}
 
-	static function write($message,$author="SERVER") {
+	/*
+	 * description: writes down a message in server's console
+	 * @params:
+	 *		$message: (string)text to be written
+	 *		$author: (string)name of the author of the message[DEFAULT='SERVER']
+	 * @return: -
+	 */
+	static function write($message,$author='SERVER') {
 		echo "[". date('Y-m-d H:i:s') ."][$author]: $message\n" ;
 	}
 
-	static function sendMessage($socket,$message) {
-		socket_write($socket, $message, strlen($message));//json...
+	/*
+	 * description: writes down a message in server's console
+	 * @params:
+	 *		$message: (string)text to be written
+	 *		$author: (string)name of the author of the message
+	 * @return: -
+	 */
+	private function writeFromUser($message,$author) {
+		$message = $this->unmask($message);
+		echo "[". date('Y-m-d H:i:s') ."][$author]: $message\n" ;
 	}
 
+	/*
+	 * description: sends a message to user encoded in json
+	 * @params:
+	 *		$socket: (socket resource)user for which the message is
+	 *		$message: (string)message to be sent
+	 *		$author: (string)name of the author of the message[DEFAULT='SERVER']
+	 *		$unmask: (boolean)set to true only if it comes directly from another user[DEFAULT=false]
+	 * @return: -
+	 */
+	private function sendMessage($socket,$message,$author='SERVER',$unmask=false) {
+		if( $unmask ) {
+			$message = $this->unmask($message);
+		}
+		$message = array(	"date"=>date("Y-m-d H:i:s"),
+							"author"=>$author,
+							"message"=>$message);
+		$message = json_encode($message);
+		$message = $this->mask($message);
+		socket_write($socket,$message,strlen($message));
+	}
+
+	/*
+	 * description: sends a message to all connected users. Leave 2 last args empty if it's a message from server to users
+	 * @params:
+	 *		$connections: (array)array of current connections on server
+	 *		$message: (string)message to be sent
+	 *		$index: (integer)index of author in $connections array. Equals to 0 if they're not registered as connection[DEFAULT=0]
+	 *		$themselves: (boolean)determines if message is supposed to be sent to the author as well[DEFAULT=false]
+	 * @return: -
+	 */
+	private function sendMessageToAll($connections, $message, $index=0, $themselves=false) {
+		for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
+			if( isset($connections[$i]) && ($i !== $index || $themselves) ) {
+				if( $index === 0 ) {
+					$this->sendMessage(	$connections[$i]->getSocket(),
+										$message);
+					continue;
+				}
+				$this->sendMessage(	$connections[$i]->getSocket(),
+									$message,
+									$connections[$index]->getName(),
+									true);
+			}
+		}
+	}
 }

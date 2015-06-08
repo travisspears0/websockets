@@ -6,11 +6,14 @@ class Connection {
 
 	private $socket,
 			$handShaked,
-			$params;//...username etc...
+			$id,
+			$name;
 
-	public function __construct($socket) {
+	public function __construct($socket,$id=0,$name="userrrrr") {
 		$this->socket = $socket;
 		$this->handShaked = false;
+		$this->id = $id;
+		$this->name = $name;
 	}
 
 	public function handShake() {
@@ -23,6 +26,14 @@ class Connection {
 
 	public function getSocket() {
 		return $this->socket;
+	}
+
+	public function getName() {
+		return $this->name;
+	}
+
+	public function getId() {
+		return $this->id;
 	}
 
 }
