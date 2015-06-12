@@ -1,5 +1,7 @@
 <input id="msg" />
 <input type="button" id="btn" value="send" />
+<hr>
+<div id="messages"></div>
 
 <script src="http://code.jquery.com/jquery-latest.min.js"></script>
 <script>
@@ -19,6 +21,7 @@ $(document).ready(function(){
 
 	conn.onmessage = function(e) {
 		console.log(e.data);
+		writeMsg(e.data);
 	};
 
 	conn.onclose = function(e) {
@@ -33,6 +36,7 @@ $(document).ready(function(){
 			conn.send( msg );
 			console.log( "Sending: " + msg );
 		}
+		$("#msg").val("");
 	});
 
 	$("#msg").keydown(function(e){
@@ -44,6 +48,28 @@ $(document).ready(function(){
 
 	function write(msg) {
 		console.log(msg);
+	}
+
+	var messages = [];
+	var maxMsg = 5;
+	function writeMsg(msg) {
+		$("#messages").html("");
+		messages.push(msg);
+		if( messages.length > maxMsg ) {
+			messages.shift();
+		}
+		var str = "" ;
+		for( var i=0 ; i<messages.length ; ++i ) {
+			var message = JSON.parse(messages[i]);
+			var date = message["date"];
+			var author = message["author"];
+			/*if( author === "SERVER" ) {
+				continue;
+			}*/
+			message = message["message"];
+			str += "["+ date +"]<strong>"+ author +"</strong>: " + message + "<br>" ;
+		}
+		$("#messages").html(str);
 	}
 
 });
