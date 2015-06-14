@@ -2,7 +2,9 @@
 
 namespace WebSockets\Server;
 
-class Server {
+use WebSockets\Interfaces\ServerInterface;
+
+class Server implements ServerInterface { 
 
 	/*
 	 * @description: 
@@ -52,7 +54,7 @@ class Server {
 	 * @return: -
 	 */
 	public function run() {
-		Server::write("Server is running...");
+		Server::write("Server is running on host=[$this->host], port=[$this->port]...");
 
 		if(!($socket = socket_create(AF_INET, SOCK_STREAM, 0)))
 		{
@@ -107,78 +109,63 @@ class Server {
 		     
 		        throw new \Exception("Could not listen on socket : [$errorcode] $errormsg!");
 		    }
-		    $newConn = true;
-		    //loop through connections
-		    for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
-		    	//received new message
-		    	if( isset($connections[$i]) && in_array($connections[$i]->getSocket(), $read) ) {
-		    		$newConn = false;
-		    		$message="";
-		    		//read whole message
-    				while( socket_recv($connections[$i]->getSocket(), $out, 2*1024,MSG_DONTWAIT) > 0 ) {
-    					if( $out != null ) {
-    						$message .= $out; 
-    					}
-    				}
-    				//try handshake
-		    		if( !($connections[$i]->isHandshaked()) ) {
-		    			//if( $this->handshake($connections[$i]->getSocket(),$message) ) {
-		    			if( $connections[$i]->handshake($message) ) {
-			    			Server::write("User [". $connections[$i]->getSocket() ."] HANDSHAKED!");
-			    		} else {
-			    			Server::write("User [". $connections[$i]->getSocket() ."] couldn't perform Handshake! Disconnecting...");
-		    				$this->disconnect($i,$connections,$read);
-			    		}
-			    		break;
-		    		}
-		    		$message = $this->unmask($message);
-		    		//empty message = disconnect
-		    		if( strlen($message) === 0 ) {
-		    			$response = "USER [" . $connections[$i]->getSocket() . "] disconnected!";
-						Server::write($response);
-						//$this->sendMessage(	$connections[$i]->getSocket(),"disconnecting...");
-						//$this->sendMessageToAll($connections,$response);//change...
-						$this->sendMessage($response,$connections);
-		    			$this->disconnect($i,$connections,$read);
-		    			break;
-		    		}
-		    		//display user's message on server console
-					$this->writeFromUser($message,$connections[$i]->getSocket());
-					//send user message to all other users
-					$this->sendMessage($message,$connections,$connections[$i]->getName(),ALL_USERS,$i);
-					//$this->sendMessageToAll($connections,$message,$i);//change
-					break;
-		    	}
-		    }
-		    //there was no messages so it has to be new connection
-		    if( $newConn ) {
-		    	
-		    	$newConn = false;
-		    	$connection = socket_accept($socket);
-		    	//reserving first empty slot in connections array
-		    	for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
-		    		if( !isset($connections[$i]) ) {
-		    			$connections[$i] = new Connection($connection);
-		    			$response = "USER [" . $connections[$i]->getSocket() . "] connected";
-						Server::write($response);
-		    			$newConn = true;
-		    			break;
-		    		}
-		    	}
-		    	//there are no empty slots, disconnecting
-		    	if( !$newConn ) {
-					Server::write("New connection has not been accepted due to connections limit which has been reached!");
-					$buff = "Server is full!";
-//NOT WORKING!!
-					//$this->sendMessage($connection,$buff);
-					//socket_write($connection, $buff,strlen($buff));
-					$this->disconnect($connection);
-		    	} else {
-//NOT WORKING!!
-		    		//$this->sendMessageToAll($connections,"new user connected");
-		    	}
+		    //there is new message or, if there's not, there is a new connection
+		    if( !$this->onMessage($connections,$read) ) {
+		    	$this->connect($connections,$socket);
 		    }
 		}
+	}
+
+	/*
+	 * description: function called when a message from one of the sockets is received
+	 * @params:
+	 *		$text: (string) text to be translated
+	 * @return: (boolean) 
+	 *				true - there was new message
+	 *				false - there was no new messages
+	 */
+	public function onMessage(&$connections,&$read) {
+		for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
+	    	if( isset($connections[$i]) && in_array($connections[$i]->getSocket(), $read) ) {
+	    		$message="";
+	    		//read whole message
+				while( socket_recv($connections[$i]->getSocket(), $out, 2*1024,MSG_DONTWAIT) > 0 ) {
+					if( $out != null ) {
+						$message .= $out; 
+					}
+				}
+				//try handshake
+	    		if( !($connections[$i]->isHandshaked()) ) {
+	    			//if( $this->handshake($connections[$i]->getSocket(),$message) ) {
+	    			if( $connections[$i]->handshake($message) ) {
+		    			Server::write("User [". $connections[$i]->getSocket() ."] HANDSHAKED!");
+		    		} else {
+		    			Server::write("User [". $connections[$i]->getSocket() ."] couldn't perform Handshake! Disconnecting...");
+	    				$this->disconnect($i,$connections,$read);
+		    		}
+					return true;
+	    		}
+	    		$message = $this->unmask($message);
+	    		//empty message = disconnect
+	    		//message including only end of text(ascii = 3) = disconnect
+	    		//(in fact first codition should be replaced/removed)
+	    		if( strlen($message) === 0 || ord($message) === 3 ) {
+	    			$response = "USER [" . $connections[$i]->getSocket() . "] disconnected!";
+					Server::write($response);
+					//$this->sendMessageToAll($connections,$response);//change...
+					$this->sendMessage($response,$connections);
+	    			$this->disconnect($i,$connections,$read);
+					return true;
+	    		}
+	    		//display user's message on server console
+				$this->writeFromUser($message,$connections[$i]->getSocket());
+				//send user message to all other users
+				$this->sendMessage($message,$connections,$connections[$i]->getName(),ALL_USERS,$i);
+				//$this->sendMessageToAll($connections,$message,$i);//change
+				return true;
+	    	}
+	    }
+	    return false;
 	}
 
 	/*
@@ -231,14 +218,14 @@ class Server {
 	/*
 	 * description: disconnects socket and removes it from server
 	 * @params:
-	 *		$index: (integer)index of socket (in $connections array) to be removed 
+	 *		$index: (mixed/integer)index of socket (in $connections array) to be removed 
 	 *		&$connections: (array reference)array with server connections
 	 *		&$read: (array reference)array with changes(from socket_select())
 	 *
-	 *		$socket: (socket resource)single socket not yet registered in server to be disconnected
+	 *		$socket: (mixed/socket resource)single socket not yet registered in server to be disconnected
 	 * @return: -
 	 */
-	private function disconnect($index,&$connections=null,&$read=null) {
+	public function disconnect($index,&$connections=null,&$read=null) {
 
 		if(func_num_args() === 1) {
 			socket_close($index);
@@ -249,17 +236,17 @@ class Server {
 		unset($connections[$index]);
 		unset($read[$index+1]);
 	}
-//TO BE TESTED!!!
+
 	/*
 	 * description: connects new socket to the server
 	 * @params:
-	 *		$socket: (socket resource)socket to be connected
 	 *		&$connections: (array reference)array with server connections
+	 *		$socket: (socket resource)master socket
 	 * @return: (bool)
 	 *		true - successfuly connected
 	 *		false - connection failure
 	 */
-	public function connect($socket,&$connections) {
+	public function connect(&$connections,$socket) {
 		$newConn = false;
     	$connection = socket_accept($socket);
     	//reserving first empty slot in connections array
@@ -309,50 +296,6 @@ class Server {
 	}
 
 	/*
-	 * description: sends a message to user encoded in json
-	 * @params:
-	 *		$socket: (socket resource)user for which the message is
-	 *		$message: (string)message to be sent
-	 *		$date: (date)current date. Variable added to avoid sending different dates to multiple users
-	 *		$author: (string)name of the author of the message[DEFAULT='SERVER']
-	 * @return: -
-	 *//*
-	private function sendMessage($socket,$message,$date,$author='SERVER') {
-		$message = array(	"date"=>$date,
-							"author"=>$author,
-							"message"=>$message);
-		$message = json_encode($message);
-		$message = $this->mask($message);
-		socket_write($socket,$message,strlen($message));
-	}*/
-
-	/*
-	 * description: sends a message to all connected users. Leave 2 last args empty if it's a message from server to users
-	 * @params:
-	 *		$connections: (array)array of current connections on server
-	 *		$message: (string)message to be sent
-	 *		$index: (integer)index of author in $connections array. Equals to -1 if they're not registered as connection[DEFAULT=-1]
-	 * @return: -
-	 *//*
-	private function sendMessageToAll($connections, $message, $index=-1) {
-		$date = date("Y-m-d H:i:s");
-		for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
-			if( isset($connections[$i]) ) {// && ($i !== $index || $themselves) ) {
-				if( $index === -1 ) {
-					$this->sendMessage(	$connections[$i]->getSocket(),
-										$message,
-										$date);
-					continue;
-				}
-				$this->sendMessage(	$connections[$i]->getSocket(),
-									$message,
-									$date,
-									$connections[$index]->getName());
-			}
-		}
-	}*/
-
-	/*
 	 * description: sends a message to user(s) encoded in json
 	 * @params:
 	 *		$message: (string)message to be sent
@@ -368,10 +311,7 @@ class Server {
  	 *			$sendTo==SOME_USERS: (array of integers)array of indexes in $connections array
 	 * @return: -
 	 */
-	//
-	//			TO BE TESTED!!!
-	//
-	private function sendMessage($message,$connections,$author=SERVER,$sendTo=ALL_USERS,$dest=-1) {
+	public function sendMessage($message,$connections,$author=SERVER,$sendTo=ALL_USERS,$dest=-1) {
 		$date = date("Y-m-d H:i:s");
 		$message = array(	"date"=>$date,
 							"author"=>$author,

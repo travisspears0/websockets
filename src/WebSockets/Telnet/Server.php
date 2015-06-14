@@ -1,6 +1,6 @@
 <?php
 
-namespace WebSockets\Http;
+namespace WebSockets\Telnet;
 
 use WebSockets\Interfaces\ServerInterface;
 
@@ -135,7 +135,7 @@ class Server implements ServerInterface {
 					}
 				}
 				//try handshake
-	    		if( !($connections[$i]->isHandshaked()) ) {
+	    		/*if( !($connections[$i]->isHandshaked()) ) {
 	    			//if( $this->handshake($connections[$i]->getSocket(),$message) ) {
 	    			if( $connections[$i]->handshake($message) ) {
 		    			Server::write("User [". $connections[$i]->getSocket() ."] HANDSHAKED!");
@@ -144,8 +144,8 @@ class Server implements ServerInterface {
 	    				$this->disconnect($i,$connections,$read);
 		    		}
 					return true;
-	    		}
-	    		$message = $this->unmask($message);
+	    		}*/
+	    		//$message = $this->unmask($message);
 	    		//empty message = disconnect
 	    		//message including only end of text(ascii = 3) = disconnect
 	    		//(in fact first codition should be replaced/removed)
@@ -166,53 +166,6 @@ class Server implements ServerInterface {
 	    	}
 	    }
 	    return false;
-	}
-
-	/*
-	 * description: translates messages sent by users for the server(TCP protocol)
-	 * @params:
-	 *		$text: (string) text to be translated
-	 * @return: (string) translated text
-	 */
-	private function unmask($text) {
-		$length = ord($text[1]) & 127;
-		if($length == 126) {
-			$masks = substr($text, 4, 4);
-			$data = substr($text, 8);
-		}
-		elseif($length == 127) {
-			$masks = substr($text, 10, 4);
-			$data = substr($text, 14);
-		}
-		else {
-			$masks = substr($text, 2, 4);
-			$data = substr($text, 6);
-		}
-		$text = "";
-		for ($i = 0; $i < strlen($data); ++$i) {
-			$text .= $data[$i] ^ $masks[$i%4];
-		}
-		return $text;
-	}
-
-	/*
-	 * description: translates messages to be sent to users from the server(TCP protocol)
-	 * @params:
-	 *		$text: (string) text to be translated
-	 * @return: (string) translated text
-	 */
-	private function mask($text)
-	{
-		$b1 = 0x80 | (0x1 & 0x0f);
-		$length = strlen($text);
-		
-		if($length <= 125)
-			$header = pack('CC', $b1, $length);
-		elseif($length > 125 && $length < 65536)
-			$header = pack('CCn', $b1, 126, $length);
-		elseif($length >= 65536)
-			$header = pack('CCNN', $b1, 127, $length);
-		return $header.$text;
 	}
 
 	/*
@@ -311,14 +264,7 @@ class Server implements ServerInterface {
  	 *			$sendTo==SOME_USERS: (array of integers)array of indexes in $connections array
 	 * @return: -
 	 */
-	public function sendMessage($message,$connections,$author=SERVER,$sendTo=ALL_USERS,$dest=-1) {
-		$date = date("Y-m-d H:i:s");
-		$message = array(	"date"=>$date,
-							"author"=>$author,
-							"message"=>$message);
-		$message = json_encode($message);
-		$message = $this->mask($message);
-		
+	public function sendMessage($message,$connections,$author=SERVER,$sendTo=ALL_USERS,$dest=-1) {	
 		switch ($sendTo) {
 			case ONE_USER: {
 				$socket = $connections[$dest]->getSocket();

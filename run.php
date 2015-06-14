@@ -2,7 +2,7 @@
 
 	require_once __DIR__ . "/vendor/autoload.php" ;
 
-	use WebSockets\Server\Server;
+	use WebSockets\Telnet\Server;
 
 	set_time_limit(0);
 

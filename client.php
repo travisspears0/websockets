@@ -53,6 +53,7 @@ $(document).ready(function(){
 	var messages = [];
 	var maxMsg = 5;
 	function writeMsg(msg) {
+		//console.log(typeof msg);
 		$("#messages").html("");
 		messages.push(msg);
 		if( messages.length > maxMsg ) {
