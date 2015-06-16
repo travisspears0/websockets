@@ -12,11 +12,14 @@ $(document).ready(function(){
 	$("#btn").attr('disabled',true);
 	$("#msg").val("");
 	$("#msg").focus();
+	var messages = [];
+	var maxMsg = 5;
 
 	conn.onopen = function(e) {
 		console.log(e);
 		$("#btn").attr('disabled',false);
 		connected = true;
+		writeMsg("connected!");
 	};
 
 	conn.onmessage = function(e) {
@@ -28,6 +31,7 @@ $(document).ready(function(){
 		console.log(e);
 		$("#btn").attr('disabled',true);
 		connected = false;
+		writeMsg("disconnected!");
 	}
 
 	$("#btn").click(function(){
@@ -50,10 +54,7 @@ $(document).ready(function(){
 		console.log(msg);
 	}
 
-	var messages = [];
-	var maxMsg = 5;
 	function writeMsg(msg) {
-		//console.log(typeof msg);
 		$("#messages").html("");
 		messages.push(msg);
 		if( messages.length > maxMsg ) {
@@ -61,15 +62,21 @@ $(document).ready(function(){
 		}
 		var str = "" ;
 		for( var i=0 ; i<messages.length ; ++i ) {
-			var message = JSON.parse(messages[i]);
-			var date = message["date"];
-			var author = message["author"];
-			/*if( author === "SERVER" ) {
-				continue;
-			}*/
-			message = message["message"];
+			var message,date,author;
+			try {
+				message = JSON.parse(messages[i]);
+				date = message["date"];
+				author = message["author"];
+				message = message["message"];
+			} catch(e) {
+				message = messages[i];
+				var d = new Date();
+				date = new Date(d.getTime()-d.getTimezoneOffset()*60*1000).toJSON().replace("T"," ").split(".")[0];
+				author = 'CLIENT';
+			}
 			str += "["+ date +"]<strong>"+ author +"</strong>: " + message + "<br>" ;
 		}
+		console.log(messages);
 		$("#messages").html(str);
 	}
 

@@ -37,6 +37,7 @@ class Server implements ServerInterface {
 		define("ONE_USER","ONE_USER");
 		define("ALL_USERS","ALL_USERS");
 		define("SOME_USERS","SOME_USERS");
+		define("ALL_BUT_ONE","ALL_BUT_ONE");
 
 		$this->host = $host;
 		$this->port = $port;
@@ -152,8 +153,7 @@ class Server implements ServerInterface {
 	    		if( strlen($message) === 0 || ord($message) === 3 ) {
 	    			$response = "USER [" . $connections[$i]->getSocket() . "] disconnected!";
 					Server::write($response);
-					//$this->sendMessageToAll($connections,$response);//change...
-					$this->sendMessage($response,$connections);
+					$this->sendMessage($response,$connections,SERVER,ALL_BUT_ONE,$i);
 	    			$this->disconnect($i,$connections,$read);
 					return true;
 	    		}
@@ -305,10 +305,12 @@ class Server implements ServerInterface {
 	 *			ONE_USER - send message only to one user
 	 *			ALL_USERS - send message to all users
 	 *			SOME_USERS - send message to multiple users
+	 *			ALL_BUT_ONE - send message to all users except one
 	 *		$dest: (mixed)
  	 *			$sendTo==ONE_USER: (integer)index in $connections array
  	 *			$sendTo==ALL_USERS: doesn't matter
  	 *			$sendTo==SOME_USERS: (array of integers)array of indexes in $connections array
+ 	 *			$sendTo==ALL_BUT_ONE: (integer)index in $connections array
 	 * @return: -
 	 */
 	public function sendMessage($message,$connections,$author=SERVER,$sendTo=ALL_USERS,$dest=-1) {
@@ -338,6 +340,15 @@ class Server implements ServerInterface {
 			case ALL_USERS: {
 				for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
 					if( isset($connections[$i]) ) {
+						$socket = $connections[$i]->getSocket();
+						socket_write($socket,$message,strlen($message));
+					}
+				}
+				break;
+			}
+			case ALL_BUT_ONE: {
+				for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
+					if( isset($connections[$i]) && $i !== $dest ) {
 						$socket = $connections[$i]->getSocket();
 						socket_write($socket,$message,strlen($message));
 					}
