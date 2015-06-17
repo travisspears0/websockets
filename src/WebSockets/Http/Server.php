@@ -10,7 +10,7 @@ class Server implements ServerInterface {
 	 * @description: 
  	 * @type: constant integer
 	 */
-	const MAX_CONNECTIONS = 2;
+	const MAX_CONNECTIONS = 1;
 
 	/*
 	 * @description: server's ip
@@ -23,6 +23,18 @@ class Server implements ServerInterface {
  	 * @type: string
 	 */
 	private $port;
+
+	/*
+	 * @description: connections on the server
+ 	 * @type: array
+	 */
+	private $connections;
+
+	/*
+	 * @description: connections which state changed(used in listening function socket_select())
+ 	 * @type: array
+	 */
+	private $read;
 
 	/*
 	 * description: Server constructor, initializes crucial variables
@@ -41,6 +53,9 @@ class Server implements ServerInterface {
 
 		$this->host = $host;
 		$this->port = $port;
+
+		$this->connections = array();
+		$this->read = array();
 
 		/* *
 		set_error_handler(function($errno, $errstr) { 
@@ -89,21 +104,19 @@ class Server implements ServerInterface {
 
 		Server::write("Waiting for incoming connections...");
 
-		$connections = array();
-
 		while(true) {
 			//reset $read array
-			$read = array();
+			$this->read = array();
 			//add master socket to $read
-			$read[0] = $socket;
+			$this->read[0] = $socket;
 			//add all the connections to $read
 			for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
-				if( isset($connections[$i]) ) {
-					$read[$i+1] = $connections[$i]->getSocket();
+				if( isset($this->connections[$i]) ) {
+					$this->read[$i+1] = $this->connections[$i]->getSocket();
 				}
 			}
 			//blocking function listening to changes on sockets and writing changes to $read array
-			if(socket_select($read , $write , $except , null) === false)
+			if(socket_select($this->read , $write , $except , null) === false)
 		    {
 		        $errorcode = socket_last_error();
 		        $errormsg = socket_strerror($errorcode);
@@ -111,38 +124,38 @@ class Server implements ServerInterface {
 		        throw new \Exception("Could not listen on socket : [$errorcode] $errormsg!");
 		    }
 		    //there is new message or, if there's not, there is a new connection
-		    if( !$this->onMessage($connections,$read) ) {
-		    	$this->connect($connections,$socket);
+		    if( !$this->onMessage() ) {
+		    	$this->connect($socket);
 		    }
 		}
 	}
 
 	/*
 	 * description: function called when a message from one of the sockets is received
-	 * @params:
-	 *		$text: (string) text to be translated
+	 * @params: -
 	 * @return: (boolean) 
 	 *				true - there was new message
 	 *				false - there was no new messages
 	 */
-	public function onMessage(&$connections,&$read) {
+	public function onMessage() {
 		for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
-	    	if( isset($connections[$i]) && in_array($connections[$i]->getSocket(), $read) ) {
+	    	if( isset($this->connections[$i]) && in_array($this->connections[$i]->getSocket(), $this->read) ) {
 	    		$message="";
 	    		//read whole message
-				while( socket_recv($connections[$i]->getSocket(), $out, 2*1024,MSG_DONTWAIT) > 0 ) {
+				/*while( socket_recv($connections[$i]->getSocket(), $out, 2*1024,MSG_DONTWAIT) > 0 ) {
 					if( $out != null ) {
 						$message .= $out; 
 					}
-				}
+				}*/
+				socket_recv($this->connections[$i]->getSocket(), $message, 2*1024,MSG_DONTWAIT);
 				//try handshake
-	    		if( !($connections[$i]->isHandshaked()) ) {
+	    		if( !($this->connections[$i]->isHandshaked()) ) {
 	    			//if( $this->handshake($connections[$i]->getSocket(),$message) ) {
-	    			if( $connections[$i]->handshake($message) ) {
-		    			Server::write("User [". $connections[$i]->getSocket() ."] HANDSHAKED!");
+	    			if( $this->connections[$i]->handshake($message) ) {
+		    			Server::write("User [". $this->connections[$i]->getSocket() ."] HANDSHAKED!");
 		    		} else {
-		    			Server::write("User [". $connections[$i]->getSocket() ."] couldn't perform Handshake! Disconnecting...");
-	    				$this->disconnect($i,$connections,$read);
+		    			Server::write("User [". $this->connections[$i]->getSocket() ."] couldn't perform Handshake! Disconnecting...");
+	    				$this->disconnect($i);
 		    		}
 					return true;
 	    		}
@@ -151,16 +164,16 @@ class Server implements ServerInterface {
 	    		//message including only end of text(ascii = 3) = disconnect
 	    		//(in fact first codition should be replaced/removed)
 	    		if( strlen($message) === 0 || ord($message) === 3 ) {
-	    			$response = "USER [" . $connections[$i]->getSocket() . "] disconnected!";
+	    			$response = "USER [" . $this->connections[$i]->getSocket() . "] disconnected!";
 					Server::write($response);
-					$this->sendMessage($response,$connections,SERVER,ALL_BUT_ONE,$i);
-	    			$this->disconnect($i,$connections,$read);
+					$this->sendMessage($response,SERVER,ALL_BUT_ONE,$i);
+	    			$this->disconnect($i);
 					return true;
 	    		}
 	    		//display user's message on server console
-				$this->writeFromUser($message,$connections[$i]->getSocket());
+				$this->writeFromUser($message,$this->connections[$i]->getSocket());
 				//send user message to all other users
-				$this->sendMessage($message,$connections,$connections[$i]->getName(),ALL_USERS,$i);
+				$this->sendMessage($message,$this->connections[$i]->getParam('name'),ALL_USERS,$i);
 				//$this->sendMessageToAll($connections,$message,$i);//change
 				return true;
 	    	}
@@ -218,59 +231,46 @@ class Server implements ServerInterface {
 	/*
 	 * description: disconnects socket and removes it from server
 	 * @params:
-	 *		$index: (mixed/integer)index of socket (in $connections array) to be removed 
-	 *		&$connections: (array reference)array with server connections
-	 *		&$read: (array reference)array with changes(from socket_select())
-	 *
-	 *		$socket: (mixed/socket resource)single socket not yet registered in server to be disconnected
+	 *		$index: (mixed)
+	 *			(integer)index of socket to be removed
+	 *			(socket resource)single socket not yet registered in server to be disconnected
 	 * @return: -
 	 */
-	public function disconnect($index,&$connections=null,&$read=null) {
+	public function disconnect($index) {
 
-		if(func_num_args() === 1) {
-			socket_close($index);
+		if( gettype($index) === "integer" ) {
+			socket_close($this->connections[$index]->getSocket());
+			unset($this->connections[$index]);
+			unset($this->read[$index+1]);
 			return;
 		}
 
-		socket_close($connections[$index]->getSocket());
-		unset($connections[$index]);
-		unset($read[$index+1]);
+		socket_close($index);
 	}
 
 	/*
 	 * description: connects new socket to the server
 	 * @params:
-	 *		&$connections: (array reference)array with server connections
 	 *		$socket: (socket resource)master socket
 	 * @return: (bool)
 	 *		true - successfuly connected
 	 *		false - connection failure
 	 */
-	public function connect(&$connections,$socket) {
-		$newConn = false;
+	public function connect($socket) {
     	$connection = socket_accept($socket);
     	//reserving first empty slot in connections array
     	for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
-    		if( !isset($connections[$i]) ) {
-    			$connections[$i] = new Connection($connection);
-    			$response = "USER [" . $connections[$i]->getSocket() . "] connected";
+    		if( !isset($this->connections[$i]) ) {
+    			$this->connections[$i] = new Connection($connection);
+    			$this->connections[$i]->setParam('name',substr(md5($i), 0, 5));
+    			$response = "USER [" . $this->connections[$i]->getSocket() . "] connected";
 				Server::write($response);
-    			$newConn = true;
-    			break;
+    			$this->sendMessage("new user connected",SERVER,ALL_BUT_ONE,$i);
+    			return true;
     		}
     	}
-    	//there are no empty slots, disconnecting
-    	if( !$newConn ) {
-			Server::write("New connection has not been accepted due to connections limit which has been reached!");
-			$buff = "Server is full!";
-//NOT WORKING!!
-			//$this->sendMessage($connection,$buff);
-			//socket_write($connection, $buff,strlen($buff));
-			$this->disconnect($connection);
-    	} else {
-//NOT WORKING!!
-    		//$this->sendMessageToAll($connections,"new user connected");
-    	}
+    	Server::write("New connection has not been accepted due to connections limit which has been reached!");
+    	$this->disconnect($connection);
 	}
 	
 	/*
@@ -299,13 +299,15 @@ class Server implements ServerInterface {
 	 * description: sends a message to user(s) encoded in json
 	 * @params:
 	 *		$message: (string)message to be sent
-	 *		$connections
-	 *		$author: (string)name of the author of the message[DEFAULT='SERVER']
-	 *		$sendTo: (FLAG)
-	 *			ONE_USER - send message only to one user
-	 *			ALL_USERS - send message to all users
-	 *			SOME_USERS - send message to multiple users
-	 *			ALL_BUT_ONE - send message to all users except one
+	 *		$author: (mixed)
+	 *			(string)name of the author of the message[DEFAULT='SERVER']
+	 *		$sendTo: (mixed)
+	 *			(FLAG)
+	 *				ONE_USER - send message only to one user
+	 *				ALL_USERS - send message to all users
+	 *				SOME_USERS - send message to multiple users
+	 *				ALL_BUT_ONE - send message to all users except one
+	 *			(socket resource)socket which might receive a message. In that case $dest don't matter
 	 *		$dest: (mixed)
  	 *			$sendTo==ONE_USER: (integer)index in $connections array
  	 *			$sendTo==ALL_USERS: doesn't matter
@@ -313,34 +315,39 @@ class Server implements ServerInterface {
  	 *			$sendTo==ALL_BUT_ONE: (integer)index in $connections array
 	 * @return: -
 	 */
-	public function sendMessage($message,$connections,$author=SERVER,$sendTo=ALL_USERS,$dest=-1) {
+	public function sendMessage($message,$author=SERVER,$sendTo=ALL_USERS,$dest=-1) {
 		$date = date("Y-m-d H:i:s");
 		$message = array(	"date"=>$date,
 							"author"=>$author,
 							"message"=>$message);
 		$message = json_encode($message);
 		$message = $this->mask($message);
+
+		if( gettype($sendTo) !== 'string' ) {
+			socket_write($sendTo,$message,strlen($message));
+			return;
+		}
 		
 		switch ($sendTo) {
 			case ONE_USER: {
-				$socket = $connections[$dest]->getSocket();
+				$socket = $this->connections[$dest]->getSocket();
 				socket_write($socket,$message,strlen($message));
 				break;
 			}
 			case SOME_USERS: {
 				foreach ( $dest as $index ) {
-					if( !isset($connections[$index]) ) {
+					if( !isset($this->connections[$index]) ) {
 						continue;
 					}
-					$socket = $connections[$index]->getSocket();
+					$socket = $this->connections[$index]->getSocket();
 					socket_write($socket,$message,strlen($message));
 				}
 				break;
 			}
 			case ALL_USERS: {
 				for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
-					if( isset($connections[$i]) ) {
-						$socket = $connections[$i]->getSocket();
+					if( isset($this->connections[$i]) ) {
+						$socket = $this->connections[$i]->getSocket();
 						socket_write($socket,$message,strlen($message));
 					}
 				}
@@ -348,8 +355,8 @@ class Server implements ServerInterface {
 			}
 			case ALL_BUT_ONE: {
 				for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
-					if( isset($connections[$i]) && $i !== $dest ) {
-						$socket = $connections[$i]->getSocket();
+					if( isset($this->connections[$i]) && $i !== $dest ) {
+						$socket = $this->connections[$i]->getSocket();
 						socket_write($socket,$message,strlen($message));
 					}
 				}

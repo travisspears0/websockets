@@ -25,33 +25,61 @@ class Connection implements ConnectionInterface {
 	 * @description: 
  	 * @type: 
 	 */
-	private $name;
+	private $params;
 
 	/*
 	 * description: ...
 	 * @params: ...
 	 * @return: ...
 	 */
-	public function __construct($socket,$id=0,$name="userrrrr") {
+	public function __construct($socket,$id=0) {
 		$this->socket = $socket;
 		$this->handshaked = false;
 		$this->id = $id;
-		$this->name = $name;
+		$this->params = array("name"=>'');
 	}
 
 	/*
-	 * description: ...
-	 * @params: ...
-	 * @return: ...
+	 * description: returns one of the connection's param
+	 * @params: 
+	 *		(string)$key - key of the param
+	 * @return: (mixed)connection's param. Type isn't specified.
 	 */
-	public function isHandshaked() {
-		return $this->handshaked;
+	public function getParam($key) {
+		return $this->params[$key];
 	}
 
 	/*
-	 * description: ...
-	 * @params: ...
-	 * @return: ...
+	 * description: sets one of the connection's param
+	 * @params: 
+	 *		(string)$key - key of the param
+	 *		(mixed)$newValue - new value for the param
+	 * @return: (boolean)
+	 *		true - param exists and have been set
+	 *		false - there's no such param
+	 */
+	public function setParam($key,$newValue) {
+		if( !isset($this->params[$key]) ) {
+			return false;
+		}
+		$this->params[$key] = $newValue;
+		return true;
+	}
+
+
+	/*
+	 * description: returns connection's id
+	 * @params: -
+	 * @return: connection's id
+	 */
+	public function getId() {
+		return $this->id;
+	}
+
+	/*
+	 * description: returns connection's socket resource
+	 * @params: -
+	 * @return: (socket resource)connection's socket resource
 	 */
 	public function getSocket() {
 		return $this->socket;
@@ -62,17 +90,8 @@ class Connection implements ConnectionInterface {
 	 * @params: ...
 	 * @return: ...
 	 */
-	public function getName() {
-		return $this->name;
-	}
-
-	/*
-	 * description: ...
-	 * @params: ...
-	 * @return: ...
-	 */
-	public function getId() {
-		return $this->id;
+	public function isHandshaked() {
+		return $this->handshaked;
 	}
 
 	/*

@@ -76,7 +76,7 @@ $(document).ready(function(){
 			}
 			str += "["+ date +"]<strong>"+ author +"</strong>: " + message + "<br>" ;
 		}
-		console.log(messages);
+		//console.log(messages);
 		$("#messages").html(str);
 	}
 
