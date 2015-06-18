@@ -10,7 +10,7 @@ class Server implements ServerInterface {
 	 * @description: 
  	 * @type: constant integer
 	 */
-	const MAX_CONNECTIONS = 1;
+	const MAX_CONNECTIONS = 2;
 
 	/*
 	 * @description: server's ip
@@ -45,11 +45,22 @@ class Server implements ServerInterface {
 	 */
 	public function __construct($host="127.0.0.1",$port="1234") {
 
+		/*
+		 * Flags for to whom send a message
+		 */
 		define("SERVER","SERVER");
 		define("ONE_USER","ONE_USER");
 		define("ALL_USERS","ALL_USERS");
 		define("SOME_USERS","SOME_USERS");
 		define("ALL_BUT_ONE","ALL_BUT_ONE");
+
+		/*
+		 * Flags for types of messages sent to users
+		 */
+		define("MESSAGE","MESSAGE");
+		define("USER_CONNECTED","USER_CONNECTED");
+		define("USER_DISCONNECTED","USER_DISCONNECTED");
+		define("LIST_OF_USERS","LIST_OF_USERS");
 
 		$this->host = $host;
 		$this->port = $port;
@@ -153,6 +164,8 @@ class Server implements ServerInterface {
 	    			//if( $this->handshake($connections[$i]->getSocket(),$message) ) {
 	    			if( $this->connections[$i]->handshake($message) ) {
 		    			Server::write("User [". $this->connections[$i]->getSocket() ."] HANDSHAKED!");
+		    			//perform initial actions for the new connection
+		    			$this->welcomeUser($i);
 		    		} else {
 		    			Server::write("User [". $this->connections[$i]->getSocket() ."] couldn't perform Handshake! Disconnecting...");
 	    				$this->disconnect($i);
@@ -164,9 +177,10 @@ class Server implements ServerInterface {
 	    		//message including only end of text(ascii = 3) = disconnect
 	    		//(in fact first codition should be replaced/removed)
 	    		if( strlen($message) === 0 || ord($message) === 3 ) {
-	    			$response = "USER [" . $this->connections[$i]->getSocket() . "] disconnected!";
+	    			$response = "User [" . $this->connections[$i]->getParam('name') . "] disconnected!";
 					Server::write($response);
-					$this->sendMessage($response,SERVER,ALL_BUT_ONE,$i);
+					$data = array("id"=>$this->connections[$i]->getId());
+					$this->sendMessage($data,SERVER,ALL_BUT_ONE,$i,USER_DISCONNECTED);
 	    			$this->disconnect($i);
 					return true;
 	    		}
@@ -179,6 +193,24 @@ class Server implements ServerInterface {
 	    	}
 	    }
 	    return false;
+	}
+
+	/*
+	 * description: performs initial actions for the new connection after successful handshaking
+	 * @params:
+	 *		$index: (integer) index of the new connection in $connections array
+	 * @return: -
+	 */
+	private function welcomeUser($index) {
+		//pass current users list to new user...
+		$users = array();
+		for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
+			if( isset($this->connections[$i]) ) {
+				$users[] = array(	"id"=>$this->connections[$i]->getId(),
+									"name"=>$this->connections[$i]->getParam('name'));
+			}
+		}
+		$this->sendMessage($users,SERVER,ONE_USER,$index,LIST_OF_USERS);
 	}
 
 	/*
@@ -252,9 +284,9 @@ class Server implements ServerInterface {
 	 * description: connects new socket to the server
 	 * @params:
 	 *		$socket: (socket resource)master socket
-	 * @return: (bool)
-	 *		true - successfuly connected
-	 *		false - connection failure
+	 * @return: (integer)
+	 *		>= 0 - successfuly connected
+	 *		-1 - connection failure
 	 */
 	public function connect($socket) {
     	$connection = socket_accept($socket);
@@ -262,15 +294,21 @@ class Server implements ServerInterface {
     	for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
     		if( !isset($this->connections[$i]) ) {
     			$this->connections[$i] = new Connection($connection);
-    			$this->connections[$i]->setParam('name',substr(md5($i), 0, 5));
-    			$response = "USER [" . $this->connections[$i]->getSocket() . "] connected";
-				Server::write($response);
-    			$this->sendMessage("new user connected",SERVER,ALL_BUT_ONE,$i);
-    			return true;
+//REMOVE BELOW!!!
+    			$names = array('one','two','three','four','five','six','seven','eight','nine','ten');
+//REMOVE ABOVE!!!
+    			$this->connections[$i]->setParam('name',$names[$i]);//substr(md5($i), 0, 5));
+				Server::write("USER [" . $this->connections[$i]->getParam('name') . "] connected");
+				//let others know that new user connected
+				$data = array(	"id"=>$this->connections[$i]->getId(),
+								"name"=>$this->connections[$i]->getParam('name'));
+    			$this->sendMessage($data,SERVER,ALL_BUT_ONE,$i,USER_CONNECTED);
+    			return $i;
     		}
     	}
     	Server::write("New connection has not been accepted due to connections limit which has been reached!");
     	$this->disconnect($connection);
+    	return -1;
 	}
 	
 	/*
@@ -298,9 +336,10 @@ class Server implements ServerInterface {
 	/*
 	 * description: sends a message to user(s) encoded in json
 	 * @params:
-	 *		$message: (string)message to be sent
-	 *		$author: (mixed)
-	 *			(string)name of the author of the message[DEFAULT='SERVER']
+	 *		$message: (mixed)
+	 *			(string)message to be sent
+	 *			(array)if($type!==MESSAGE) it's an array with state for users to pass
+	 *		$author: (string)name of the author of the message[DEFAULT='SERVER']
 	 *		$sendTo: (mixed)
 	 *			(FLAG)
 	 *				ONE_USER - send message only to one user
@@ -313,13 +352,21 @@ class Server implements ServerInterface {
  	 *			$sendTo==ALL_USERS: doesn't matter
  	 *			$sendTo==SOME_USERS: (array of integers)array of indexes in $connections array
  	 *			$sendTo==ALL_BUT_ONE: (integer)index in $connections array
+ 	 *		$type: (FLAG)
+ 	 *			MESSAGE - just a text message to be displayed
+ 	 *			USER_CONNECTED - new user connected to server
+ 	 *			USER_DISCONNECTED - user disconnected from server
 	 * @return: -
 	 */
-	public function sendMessage($message,$author=SERVER,$sendTo=ALL_USERS,$dest=-1) {
+	public function sendMessage($message,$author=SERVER,$sendTo=ALL_USERS,$dest=-1,$type=MESSAGE) {
 		$date = date("Y-m-d H:i:s");
+		if( $type !== MESSAGE ) {
+			$message = json_encode($message);
+		}
 		$message = array(	"date"=>$date,
 							"author"=>$author,
-							"message"=>$message);
+							"message"=>$message,
+							"type"=>$type);
 		$message = json_encode($message);
 		$message = $this->mask($message);
 
