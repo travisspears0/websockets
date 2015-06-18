@@ -133,55 +133,6 @@
 							}
 							$scope.$apply();
 						}
-
-						/*
-						
-
-						$("#btn").click(function(){
-							var msg = $("#msg").val();
-							if( msg.length || true ) {
-								conn.send( msg );
-								console.log( "Sending: " + msg );
-							}
-							$("#msg").val("");
-						});
-
-						$("#msg").keydown(function(e){
-							var code = e.keyCode || e.which;
-							if( code === 13 && connected ) {
-								$("#btn").click();
-							}
-						});
-
-						function write(msg) {
-							console.log(msg);
-						}
-
-						function writeMsg(msg) {
-							$("#messages").html("");
-							messages.push(msg);
-							if( messages.length > maxMsg ) {
-								messages.shift();
-							}
-							var str = "" ;
-							for( var i=0 ; i<messages.length ; ++i ) {
-								var message,date,author;
-								try {
-									message = JSON.parse(messages[i]);
-									date = message["date"];
-									author = message["author"];
-									message = message["message"];
-								} catch(e) {
-									message = messages[i];
-									var d = new Date();
-									date = new Date(d.getTime()-d.getTimezoneOffset()*60*1000).toJSON().replace("T"," ").split(".")[0];
-									author = 'CLIENT';
-								}
-								str += "["+ date +"]<strong>"+ author +"</strong>: " + message + "<br>" ;
-							}
-							$("#messages").html(str);
-						}
-						/* */
 					});
 
 					app.directive('autoFocus', function($timeout) {

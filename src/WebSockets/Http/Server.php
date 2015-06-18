@@ -55,7 +55,7 @@ class Server implements ServerInterface {
 		define("ALL_BUT_ONE","ALL_BUT_ONE");
 
 		/*
-		 * Flags for types of messages sent to users
+		 * Flags for types of messages to be sent to users
 		 */
 		define("MESSAGE","MESSAGE");
 		define("USER_CONNECTED","USER_CONNECTED");
@@ -150,18 +150,13 @@ class Server implements ServerInterface {
 	 */
 	public function onMessage() {
 		for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
+			//catches changed socket
 	    	if( isset($this->connections[$i]) && in_array($this->connections[$i]->getSocket(), $this->read) ) {
 	    		$message="";
-	    		//read whole message
-				/*while( socket_recv($connections[$i]->getSocket(), $out, 2*1024,MSG_DONTWAIT) > 0 ) {
-					if( $out != null ) {
-						$message .= $out; 
-					}
-				}*/
+	    		//get the data
 				socket_recv($this->connections[$i]->getSocket(), $message, 2*1024,MSG_DONTWAIT);
 				//try handshake
 	    		if( !($this->connections[$i]->isHandshaked()) ) {
-	    			//if( $this->handshake($connections[$i]->getSocket(),$message) ) {
 	    			if( $this->connections[$i]->handshake($message) ) {
 		    			Server::write("User [". $this->connections[$i]->getSocket() ."] HANDSHAKED!");
 		    			//perform initial actions for the new connection
@@ -356,6 +351,7 @@ class Server implements ServerInterface {
  	 *			MESSAGE - just a text message to be displayed
  	 *			USER_CONNECTED - new user connected to server
  	 *			USER_DISCONNECTED - user disconnected from server
+ 	 *			LIST_OF_USERS - list of users who are online right now
 	 * @return: -
 	 */
 	public function sendMessage($message,$author=SERVER,$sendTo=ALL_USERS,$dest=-1,$type=MESSAGE) {
