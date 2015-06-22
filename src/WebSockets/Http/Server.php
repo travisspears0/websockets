@@ -4,13 +4,13 @@ namespace WebSockets\Http;
 
 use WebSockets\Interfaces\ServerInterface;
 
-class Server implements ServerInterface { 
+class Server implements ServerInterface {
 
 	/*
 	 * @description: 
  	 * @type: constant integer
 	 */
-	const MAX_CONNECTIONS = 2;
+	private $maxConnections;
 
 	/*
 	 * @description: server's ip
@@ -43,7 +43,7 @@ class Server implements ServerInterface {
 	 *		$port
 	 * @return: -
 	 */
-	public function __construct($host="127.0.0.1",$port="1234") {
+	public function __construct($host="127.0.0.1",$port="1234",$maxConnections=10) {
 
 		/*
 		 * Flags for to whom send a message
@@ -64,11 +64,12 @@ class Server implements ServerInterface {
 
 		$this->host = $host;
 		$this->port = $port;
+		$this->maxConnections = $maxConnections;
 
 		$this->connections = array();
 		$this->read = array();
 
-		/* *
+		/* */
 		set_error_handler(function($errno, $errstr) { 
 			throw new \Exception("ERROR => [$errno] $errstr");
 		});
@@ -135,7 +136,7 @@ class Server implements ServerInterface {
 		        throw new \Exception("Could not listen on socket : [$errorcode] $errormsg!");
 		    }
 		    //there is new message or, if there's not, there is a new connection
-		    if( !$this->onMessage() ) {
+		    if( !$this->onData() ) {
 		    	$this->connect($socket);
 		    }
 		}
@@ -148,7 +149,7 @@ class Server implements ServerInterface {
 	 *				true - there was new message
 	 *				false - there was no new messages
 	 */
-	public function onMessage() {
+	private function onData() {
 		for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
 			//catches changed socket
 	    	if( isset($this->connections[$i]) && in_array($this->connections[$i]->getSocket(), $this->read) ) {
@@ -263,7 +264,7 @@ class Server implements ServerInterface {
 	 *			(socket resource)single socket not yet registered in server to be disconnected
 	 * @return: -
 	 */
-	public function disconnect($index) {
+	private function disconnect($index) {
 
 		if( gettype($index) === "integer" ) {
 			socket_close($this->connections[$index]->getSocket());
@@ -283,7 +284,7 @@ class Server implements ServerInterface {
 	 *		>= 0 - successfuly connected
 	 *		-1 - connection failure
 	 */
-	public function connect($socket) {
+	private function connect($socket) {
     	$connection = socket_accept($socket);
     	//reserving first empty slot in connections array
     	for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
@@ -354,7 +355,7 @@ class Server implements ServerInterface {
  	 *			LIST_OF_USERS - list of users who are online right now
 	 * @return: -
 	 */
-	public function sendMessage($message,$author=SERVER,$sendTo=ALL_USERS,$dest=-1,$type=MESSAGE) {
+	protected function sendMessage($message,$author=SERVER,$sendTo=ALL_USERS,$dest=-1,$type=MESSAGE) {
 		$date = date("Y-m-d H:i:s");
 		if( $type !== MESSAGE ) {
 			$message = json_encode($message);
@@ -407,5 +408,39 @@ class Server implements ServerInterface {
 			}
 		}
 	}
+
+	/*
+	 *
+	 * INTERFACE METHODS
+	 *
+	 */
+
+	/*
+	 * description: function called after message was received from one of the users
+	 * @params: -
+	 * @return: -
+	 */
+	public function onMessage() {}
+
+	/*
+	 * description: function called after new user connected
+	 * @params: -
+	 * @return: -
+	 */
+	public function onConnect() {}
+
+	/*
+	 * description: function called after user handshaked successfuly
+	 * @params: -
+	 * @return: -
+	 */
+	public function onHandshake() {}
+
+	/*
+	 * description: function called after user disconnected
+	 * @params: -
+	 * @return: -
+	 */
+	public function onDisconnect() {}
 
 }
