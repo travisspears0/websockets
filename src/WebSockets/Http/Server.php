@@ -10,31 +10,31 @@ class Server implements ServerInterface {
 	 * @description: 
  	 * @type: constant integer
 	 */
-	private $maxConnections;
+	protected $maxConnections;
 
 	/*
 	 * @description: server's ip
  	 * @type: string
 	 */
-	private $host;
+	protected $host;
 
 	/*
 	 * @description: port on which server will listen to connections
  	 * @type: string
 	 */
-	private $port;
+	protected $port;
 
 	/*
 	 * @description: connections on the server
  	 * @type: array
 	 */
-	private $connections;
+	protected $connections;
 
 	/*
 	 * @description: connections which state changed(used in listening function socket_select())
  	 * @type: array
 	 */
-	private $read;
+	protected $read;
 
 	/*
 	 * description: Server constructor, initializes crucial variables
@@ -45,10 +45,10 @@ class Server implements ServerInterface {
 	 */
 	public function __construct($host="127.0.0.1",$port="1234",$maxConnections=10) {
 
+		define("SERVER","SERVER");
 		/*
 		 * Flags for to whom send a message
 		 */
-		define("SERVER","SERVER");
 		define("ONE_USER","ONE_USER");
 		define("ALL_USERS","ALL_USERS");
 		define("SOME_USERS","SOME_USERS");
@@ -69,7 +69,7 @@ class Server implements ServerInterface {
 		$this->connections = array();
 		$this->read = array();
 
-		/* */
+		/* *
 		set_error_handler(function($errno, $errstr) { 
 			throw new \Exception("ERROR => [$errno] $errstr");
 		});
@@ -104,7 +104,7 @@ class Server implements ServerInterface {
 
 		Server::write("Socket bind OK");
 
-		if(!socket_listen ($socket , Server::MAX_CONNECTIONS))
+		if(!socket_listen ($socket , $this->maxConnections))
 		{
 		    $errorcode = socket_last_error();
 		    $errormsg = socket_strerror($errorcode);
@@ -122,7 +122,7 @@ class Server implements ServerInterface {
 			//add master socket to $read
 			$this->read[0] = $socket;
 			//add all the connections to $read
-			for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
+			for( $i=0 ; $i<$this->maxConnections ; ++$i ) {
 				if( isset($this->connections[$i]) ) {
 					$this->read[$i+1] = $this->connections[$i]->getSocket();
 				}
@@ -150,7 +150,7 @@ class Server implements ServerInterface {
 	 *				false - there was no new messages
 	 */
 	private function onData() {
-		for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
+		for( $i=0 ; $i<$this->maxConnections ; ++$i ) {
 			//catches changed socket
 	    	if( isset($this->connections[$i]) && in_array($this->connections[$i]->getSocket(), $this->read) ) {
 	    		$message="";
@@ -158,10 +158,9 @@ class Server implements ServerInterface {
 				socket_recv($this->connections[$i]->getSocket(), $message, 2*1024,MSG_DONTWAIT);
 				//try handshake
 	    		if( !($this->connections[$i]->isHandshaked()) ) {
-	    			if( $this->connections[$i]->handshake($message) ) {
+	    			if( $this->handshake($this->connections[$i],$message) ) {
 		    			Server::write("User [". $this->connections[$i]->getSocket() ."] HANDSHAKED!");
-		    			//perform initial actions for the new connection
-		    			$this->welcomeUser($i);
+						$this->onConnect($this->connections[$i]);
 		    		} else {
 		    			Server::write("User [". $this->connections[$i]->getSocket() ."] couldn't perform Handshake! Disconnecting...");
 	    				$this->disconnect($i);
@@ -175,38 +174,16 @@ class Server implements ServerInterface {
 	    		if( strlen($message) === 0 || ord($message) === 3 ) {
 	    			$response = "User [" . $this->connections[$i]->getParam('name') . "] disconnected!";
 					Server::write($response);
-					$data = array("id"=>$this->connections[$i]->getId());
-					$this->sendMessage($data,SERVER,ALL_BUT_ONE,$i,USER_DISCONNECTED);
+					$this->onDisconnect($this->connections[$i]);
 	    			$this->disconnect($i);
 					return true;
 	    		}
-	    		//display user's message on server console
-				$this->writeFromUser($message,$this->connections[$i]->getSocket());
-				//send user message to all other users
-				$this->sendMessage($message,$this->connections[$i]->getParam('name'),ALL_USERS,$i);
-				//$this->sendMessageToAll($connections,$message,$i);//change
+				Server::write($message,$this->connections[$i]->getSocket());
+				$this->onMessage($message,$this->connections[$i]);
 				return true;
 	    	}
 	    }
 	    return false;
-	}
-
-	/*
-	 * description: performs initial actions for the new connection after successful handshaking
-	 * @params:
-	 *		$index: (integer) index of the new connection in $connections array
-	 * @return: -
-	 */
-	private function welcomeUser($index) {
-		//pass current users list to new user...
-		$users = array();
-		for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
-			if( isset($this->connections[$i]) ) {
-				$users[] = array(	"id"=>$this->connections[$i]->getId(),
-									"name"=>$this->connections[$i]->getParam('name'));
-			}
-		}
-		$this->sendMessage($users,SERVER,ONE_USER,$index,LIST_OF_USERS);
 	}
 
 	/*
@@ -287,18 +264,14 @@ class Server implements ServerInterface {
 	private function connect($socket) {
     	$connection = socket_accept($socket);
     	//reserving first empty slot in connections array
-    	for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
+    	for( $i=0 ; $i<$this->maxConnections ; ++$i ) {
     		if( !isset($this->connections[$i]) ) {
-    			$this->connections[$i] = new Connection($connection);
+    			$this->connections[$i] = new Connection($connection,$i);
 //REMOVE BELOW!!!
     			$names = array('one','two','three','four','five','six','seven','eight','nine','ten');
 //REMOVE ABOVE!!!
-    			$this->connections[$i]->setParam('name',$names[$i]);//substr(md5($i), 0, 5));
+    			$this->connections[$i]->setParam('name',$names[$i]);
 				Server::write("USER [" . $this->connections[$i]->getParam('name') . "] connected");
-				//let others know that new user connected
-				$data = array(	"id"=>$this->connections[$i]->getId(),
-								"name"=>$this->connections[$i]->getParam('name'));
-    			$this->sendMessage($data,SERVER,ALL_BUT_ONE,$i,USER_CONNECTED);
     			return $i;
     		}
     	}
@@ -308,6 +281,55 @@ class Server implements ServerInterface {
 	}
 	
 	/*
+	 * description: performs handshake between user and server. Basically receives message from user and decides whether it passes requirements to establish connection properly
+	 * @params:
+	 *		$headers: (string)text sent by user
+	 * @return: bool:
+ 	 *				true: handshake success
+ 	 *				false: handshake failure
+	 */
+	public function handshake($connection,$headers) {
+
+		if(preg_match("/Sec-WebSocket-Version: (.*)\r\n/", $headers, $match))
+			$version = $match[1];
+		else {
+			Server::write("The client doesn't support WebSocket");
+			$this->handshaked = false;
+			return false;
+		}
+
+		if($version == 13) {
+			// Extract header variables
+			if(preg_match("/GET (.*) HTTP/", $headers, $match))
+				$root = $match[1];
+			if(preg_match("/Host: (.*)\r\n/", $headers, $match))
+				$host = $match[1];
+			if(preg_match("/Origin: (.*)\r\n/", $headers, $match))
+				$origin = $match[1];
+			if(preg_match("/Sec-WebSocket-Key: (.*)\r\n/", $headers, $match))
+				$key = $match[1];
+
+			$acceptKey = $key.'258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+			$acceptKey = base64_encode(sha1($acceptKey, true));
+
+			$upgrade = "HTTP/1.1 101 Switching Protocols\r\n".
+					   "Upgrade: websocket\r\n".
+					   "Connection: Upgrade\r\n".
+					   "Sec-WebSocket-Accept: $acceptKey".
+					   "\r\n\r\n";
+
+			socket_write($connection->getSocket(), $upgrade, strlen($upgrade));
+			$connection->setHandshaked(true);
+			return true;
+		}
+		else {
+			Server::write("WebSocket version 13 required (the client supports version {$version})");
+			$this->handshaked = false;
+			return false;
+		}
+	}
+
+	/*
 	 * description: writes down a message in server's console
 	 * @params:
 	 *		$message: (string)text to be written
@@ -315,17 +337,6 @@ class Server implements ServerInterface {
 	 * @return: -
 	 */
 	static function write($message,$author='SERVER') {
-		echo "[". date('Y-m-d H:i:s') ."][$author]: $message\n" ;
-	}
-
-	/*
-	 * description: writes down a message in server's console
-	 * @params:
-	 *		$message: (string)text to be written
-	 *		$author: (string)name of the author of the message
-	 * @return: -
-	 */
-	private function writeFromUser($message,$author) {
 		echo "[". date('Y-m-d H:i:s') ."][$author]: $message\n" ;
 	}
 
@@ -389,7 +400,7 @@ class Server implements ServerInterface {
 				break;
 			}
 			case ALL_USERS: {
-				for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
+				for( $i=0 ; $i<$this->maxConnections ; ++$i ) {
 					if( isset($this->connections[$i]) ) {
 						$socket = $this->connections[$i]->getSocket();
 						socket_write($socket,$message,strlen($message));
@@ -398,7 +409,7 @@ class Server implements ServerInterface {
 				break;
 			}
 			case ALL_BUT_ONE: {
-				for( $i=0 ; $i<Server::MAX_CONNECTIONS ; ++$i ) {
+				for( $i=0 ; $i<$this->maxConnections ; ++$i ) {
 					if( isset($this->connections[$i]) && $i !== $dest ) {
 						$socket = $this->connections[$i]->getSocket();
 						socket_write($socket,$message,strlen($message));
@@ -420,27 +431,20 @@ class Server implements ServerInterface {
 	 * @params: -
 	 * @return: -
 	 */
-	public function onMessage() {}
+	public function onMessage($message,$connection) {}
 
 	/*
 	 * description: function called after new user connected
 	 * @params: -
 	 * @return: -
 	 */
-	public function onConnect() {}
-
-	/*
-	 * description: function called after user handshaked successfuly
-	 * @params: -
-	 * @return: -
-	 */
-	public function onHandshake() {}
+	public function onConnect($connection) {}
 
 	/*
 	 * description: function called after user disconnected
 	 * @params: -
 	 * @return: -
 	 */
-	public function onDisconnect() {}
+	public function onDisconnect($connection) {}
 
 }

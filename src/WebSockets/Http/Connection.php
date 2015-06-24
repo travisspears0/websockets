@@ -95,51 +95,11 @@ class Connection implements ConnectionInterface {
 	}
 
 	/*
-	 * description: performs handshake between user and server. Basically receives message from user and decides whether it passes requirements to establish connection properly
-	 * @params:
-	 *		$headers: (string)text sent by user
-	 * @return: bool:
- 	 *				true: handshake success
- 	 *				false: handshake failure
+	 * description: ...
+	 * @params: ...
+	 * @return: ...
 	 */
-	public function handshake($headers) {
-
-		if(preg_match("/Sec-WebSocket-Version: (.*)\r\n/", $headers, $match))
-			$version = $match[1];
-		else {
-			Server::write("The client doesn't support WebSocket");
-			$this->handshaked = false;
-			return false;
-		}
-
-		if($version == 13) {
-			// Extract header variables
-			if(preg_match("/GET (.*) HTTP/", $headers, $match))
-				$root = $match[1];
-			if(preg_match("/Host: (.*)\r\n/", $headers, $match))
-				$host = $match[1];
-			if(preg_match("/Origin: (.*)\r\n/", $headers, $match))
-				$origin = $match[1];
-			if(preg_match("/Sec-WebSocket-Key: (.*)\r\n/", $headers, $match))
-				$key = $match[1];
-
-			$acceptKey = $key.'258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
-			$acceptKey = base64_encode(sha1($acceptKey, true));
-
-			$upgrade = "HTTP/1.1 101 Switching Protocols\r\n".
-					   "Upgrade: websocket\r\n".
-					   "Connection: Upgrade\r\n".
-					   "Sec-WebSocket-Accept: $acceptKey".
-					   "\r\n\r\n";
-
-			socket_write($this->socket, $upgrade, strlen($upgrade));
-			$this->handshaked = true;
-			return true;
-		}
-		else {
-			Server::write("WebSocket version 13 required (the client supports version {$version})");
-			$this->handshaked = false;
-			return false;
-		}
+	public function setHandshaked($handshaked) {
+		$this->handshaked = $handshaked;
 	}
 }

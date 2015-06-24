@@ -9,27 +9,20 @@ interface ServerInterface {
 	 * @params: -
 	 * @return: -
 	 */
-	public function onMessage();
+	public function onMessage($message,$connection);
 
 	/*
 	 * description: function called after new user connected
 	 * @params: -
 	 * @return: -
 	 */
-	public function onConnect();
-
-	/*
-	 * description: function called after user handshaked successfuly
-	 * @params: -
-	 * @return: -
-	 */
-	public function onHandshake();
+	public function onConnect($connection);
 
 	/*
 	 * description: function called after user disconnected
 	 * @params: -
 	 * @return: -
 	 */
-	public function onDisconnect();
+	public function onDisconnect($connection);
 
 }
