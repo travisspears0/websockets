@@ -283,6 +283,7 @@ class Server implements ServerInterface {
 	/*
 	 * description: performs handshake between user and server. Basically receives message from user and decides whether it passes requirements to establish connection properly
 	 * @params:
+	 *		$connection: (socket resource)socket which tries handshake with the server
 	 *		$headers: (string)text sent by user
 	 * @return: bool:
  	 *				true: handshake success
@@ -428,21 +429,25 @@ class Server implements ServerInterface {
 
 	/*
 	 * description: function called after message was received from one of the users
-	 * @params: -
+	 * @params:
+	 *		$message (string)message text
+	 *		$connection (socket resource)socket which is the author of the message
 	 * @return: -
 	 */
 	public function onMessage($message,$connection) {}
 
 	/*
 	 * description: function called after new user connected
-	 * @params: -
+	 * @params:
+	 *		$connection (socket resource)socket which just connected
 	 * @return: -
 	 */
 	public function onConnect($connection) {}
 
 	/*
 	 * description: function called after user disconnected
-	 * @params: -
+	 * @params:
+	 *		$connection (socket resource)socket which disconnected
 	 * @return: -
 	 */
 	public function onDisconnect($connection) {}

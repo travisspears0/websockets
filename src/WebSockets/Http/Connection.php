@@ -7,29 +7,31 @@ use WebSockets\Interfaces\ConnectionInterface;
 class Connection implements ConnectionInterface {
 	
 	/*
-	 * @description: 
- 	 * @type: 
+	 * @description: socket
+ 	 * @type: socket resource
 	 */
 	private $socket;
 	/*
-	 * @description: 
- 	 * @type: 
+	 * @description: determines whether socket handshaked with the server
+ 	 * @type: boolean
 	 */
 	private $handshaked;
 	/*
-	 * @description: 
- 	 * @type: 
+	 * @description: unique socket id on server
+ 	 * @type: integer
 	 */
 	private $id;
 	/*
-	 * @description: 
- 	 * @type: 
+	 * @description: array of miscellaneous parameters of the client connection
+ 	 * @type: array
 	 */
 	private $params;
 
 	/*
-	 * description: ...
-	 * @params: ...
+	 * description: constructor
+	 * @params:
+	 *		$socket (socket resource) socket
+	 *		$id (integer) unique socket id on server
 	 * @return: ...
 	 */
 	public function __construct($socket,$id=0) {
@@ -86,18 +88,21 @@ class Connection implements ConnectionInterface {
 	}
 
 	/*
-	 * description: ...
-	 * @params: ...
-	 * @return: ...
+	 * description: specifies if conection handshaked with the server
+	 * @params: -
+	 * @return:
+	 *		-true - connection handshaked
+	 *		-false - connection hasn't handshaked yet
 	 */
 	public function isHandshaked() {
 		return $this->handshaked;
 	}
 
 	/*
-	 * description: ...
-	 * @params: ...
-	 * @return: ...
+	 * description: sets $handshaked variable
+	 * @params: 
+	 *		$handshaked (boolean) 
+	 * @return: -
 	 */
 	public function setHandshaked($handshaked) {
 		$this->handshaked = $handshaked;
